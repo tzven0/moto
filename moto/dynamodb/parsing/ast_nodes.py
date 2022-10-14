@@ -27,13 +27,53 @@ class Node(metaclass=abc.ABCMeta):
             if nr_of_clauses > 1:
                 raise TooManyAddClauses()
             set_actions = self.find_clauses(UpdateExpressionSetAction)
+            print("####")
+            path_lens_and_data = [
+                [
+                    (len(i.children), [j.children for j in i.children])
+                    for i in c.children
+                ]
+                for c in set_actions
+            ]
+            path_struct = {}
+            for c in set_actions:
+                for i in c.children:
+                    if str(len(i.children)) not in path_struct:
+                        path_struct[str(len(i.children))] = []
+                    path_struct[str(len(i.children))].append(
+                        str([j.children for j in i.children])
+                    )
+                    break
+            path_struct = dict(sorted(path_struct.items(), reverse=True))
+            print(path_struct)
             set_attributes = [
                 c.children[0].children[0].children[0] for c in set_actions
             ]
+            for each in path_struct:
+                for path in path_struct[each]:
+                    if path_struct[each].count(path) > 1:
+                        raise DuplicateUpdateExpression(set_attributes)
+                for each2 in path_struct:
+                    print(path_struct[each])
+                    print(path_struct[each2])
+                    if path_struct[each2] == path_struct[each]:
+                        continue
+                    for each3 in path_struct[each]:
+                        for each4 in path_struct[each2]:
+                            print(each3)
+                            print(each4)
+                            if each4[1:-1] in each3:
+                                raise DuplicateUpdateExpression(set_attributes)
+            print("####")
+
             # We currently only check for duplicates
             # We should also check for partial duplicates, i.e. [attr, attr.sub] is also invalid
-            if len(set_attributes) != len(set(set_attributes)):
-                raise DuplicateUpdateExpression(set_attributes)
+            print("####")
+            print(set_attributes)
+            print(set(set_attributes))
+            print("####")
+            # if len(set_attributes) != len(set(set_attributes)):
+            #     raise DuplicateUpdateExpression(set_attributes)
 
     def find_clauses(self, clause_type):
         clauses = []

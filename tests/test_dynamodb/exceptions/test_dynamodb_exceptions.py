@@ -618,6 +618,108 @@ def test_update_item_with_duplicate_expressions(expression):
 
 
 @mock_dynamodb
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "SET example_column = :example_child, example_column = :example_child",  # shall give error
+        "SET example_column = :example_child, example_column = :example_child2",  # shall give error
+        "SET example_column.example_map.example_child = :example_child, example_column.example_map = :example_child2",  # shall give error
+        "SET example_column.example_map = :example_child2, example_column.example_map.example_child = :example_child",  # shall give error
+        "SET example_column.example_map.example_child = :example_child, example_column.example_map.example_child2 = :example_child2, example_column.example_map.example_child2 = :example_child2",  # shall give error
+        "SET example_column = :example_child2, example_column.example_map.example_child = :example_child",  # shall give error
+        "SET example_column.example_map.example_child = :example_child, example_column.example_map.example_child3 = :example_child3, example_column.example_map.example_child2 = :example_child2",  # shall not give error
+    ],
+)
+def test_update_item_with_duplicate_expressions_in_root(expression):
+    dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+    dynamodb.create_table(
+        TableName="example_table",
+        KeySchema=[{"AttributeName": "pk", "KeyType": "HASH"}],
+        AttributeDefinitions=[{"AttributeName": "pk", "AttributeType": "S"}],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    record = {
+        "pk": "example_id",
+        "example_column": {"example_map": {"example_child": "example"}},
+    }
+    table = dynamodb.Table("example_table")
+    table.put_item(Item=record)
+    print(table.get_item(Key={"pk": "example_id"}))
+    with pytest.raises(ClientError) as exc:
+        table.update_item(
+            Key={"pk": "example_id"},
+            UpdateExpression=expression,
+            ExpressionAttributeValues={
+                ":example_child": "example",
+                ":example_child2": "example2",
+                ":example_child3": "example3",
+            },
+        )
+    err = exc.value.response["Error"]
+    err["Code"].should.equal("ValidationException")
+    err["Message"].should.equal(
+        "Invalid UpdateExpression: Two document paths overlap with each other; must remove or rewrite one of these paths; path one: [example_column], path two: [example_column]"
+    )
+
+    # The item is not updated
+    item = table.get_item(Key={"pk": "example_id"})["Item"]
+    item.should.equal(
+        {
+            "pk": "example_id",
+            "example_column": {"example_map": {"example_child": "example"}},
+        }
+    )
+
+
+@mock_dynamodb
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "SET example_column.example_map.example_child = :example_child, example_column.example_map.example_child3 = :example_child3, example_column.example_map.example_child2 = :example_child2",  # shall not give error
+    ],
+)
+def test_successfull_update_item_with_duplicate_expressions_in_root(expression):
+    dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+    dynamodb.create_table(
+        TableName="example_table",
+        KeySchema=[{"AttributeName": "pk", "KeyType": "HASH"}],
+        AttributeDefinitions=[{"AttributeName": "pk", "AttributeType": "S"}],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    record = {
+        "pk": "example_id",
+        "example_column": {"example_map": {"example_child": "example"}},
+    }
+    table = dynamodb.Table("example_table")
+    table.put_item(Item=record)
+    print(table.get_item(Key={"pk": "example_id"}))
+    table.update_item(
+        Key={"pk": "example_id"},
+        UpdateExpression=expression,
+        ExpressionAttributeValues={
+            ":example_child": "example",
+            ":example_child2": "example2",
+            ":example_child3": "example3",
+        },
+    )
+
+    # The item is updated successfully
+    item = table.get_item(Key={"pk": "example_id"})["Item"]
+    item.should.equal(
+        {
+            "pk": "example_id",
+            "example_column": {
+                "example_map": {
+                    "example_child": "example",
+                    "example_child2": "example2",
+                    "example_child3": "example3",
+                }
+            },
+        }
+    )
+
+
+@mock_dynamodb
 def test_put_item_wrong_datatype():
     if settings.TEST_SERVER_MODE:
         raise SkipTest("Unable to mock a session with Config in ServerMode")
